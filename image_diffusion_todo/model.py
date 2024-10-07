@@ -18,8 +18,13 @@ class DiffusionModule(nn.Module):
         # DO NOT change the code outside this part.
         # compute noise matching loss.
         B = x0.shape[0]
-        timestep = self.var_scheduler.uniform_sample_t(B, self.device)        
-        loss = x0.mean()
+        timestep = self.var_scheduler.uniform_sample_t(B, self.device)
+        if noise is None:
+            noise = torch.randn_like(x0).to(self.device)
+        eps = torch.randn_like(x0).to(x0.device)
+        x_t, eps = self.var_scheduler.add_noise(x0, timestep)
+        eps_theta = self.network(x_t, timestep, class_label=class_label)
+        loss = F.mse_loss(eps_theta, eps)
         ######################
         return loss
     
@@ -51,7 +56,7 @@ class DiffusionModule(nn.Module):
             # create a tensor of shape (2*batch_size,) where the first half is filled with zeros (i.e., null condition).
             assert class_label is not None
             assert len(class_label) == batch_size, f"len(class_label) != batch_size. {len(class_label)} != {batch_size}"
-            raise NotImplementedError("TODO")
+            class_label = torch.cat([class_label, torch.zeros_like(class_label)], dim=0)
             #######################
 
         traj = [x_T]
@@ -60,7 +65,17 @@ class DiffusionModule(nn.Module):
             if do_classifier_free_guidance:
                 ######## TODO ########
                 # Assignment 2. Implement the classifier-free guidance.
-                raise NotImplementedError("TODO")
+                noise_pred_y = self.network(
+                    x_t,
+                    timestep=t.to(self.device),
+                    class_label=class_label[:batch_size],
+                )
+                noise_pred_none = self.network(
+                    x_t,
+                    timestep=t.to(self.device),
+                    class_label=class_label[batch_size:],
+                )
+                noise_pred = (1 + guidance_scale) * noise_pred_y - guidance_scale * noise_pred_none
                 #######################
             else:
                 noise_pred = self.network(
